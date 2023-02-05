@@ -1,0 +1,60 @@
+Vagrant.require_version ">= 2.2.17"
+Vagrant.configure(2) do |config|
+    # Need this to reboot Windows after enabling Containers feature.
+    config.vagrant.plugins = ["vagrant-reload", "vagrant-rke2"]
+
+    config.vm.network "private_network", bridge: "Default Switch"
+    config.vm.synced_folder ".", "/vagrant", disabled: true
+
+    rke2_version = "v1.24.9+rke2r2"
+
+    config.vm.define :server do |server|
+      server.vm.host_name = "server"
+      server.vm.box = 'bento/ubuntu-20.04'
+      server.vm.provider :hyperv do |hv|
+        hv.linked_clone = true
+        hv.memory = 4096
+        hv.cpus = 2
+        hv.maxmemory = 4096
+      end
+
+      server.vm.provision :rke2, run: "once" do |rke2|
+        rke2.env = <<~ENV
+        INSTALL_RKE2_VERSION=#{rke2_version}
+        INSTALL_RKE2_TYPE=server
+        ENV
+
+        rke2.config_mode = '0644' # side-step https://github.com/k3s-io/k3s/issues/4321
+        rke2.config = <<~YAML
+          write-kubeconfig-mode: 0644
+          token: vagrant-rke2
+          cni: calico
+        YAML
+      end
+    end
+
+    config.vm.define :linuxagent do |linuxagent|
+      linuxagent.vm.host_name = "linuxagent"
+      linuxagent.vm.box = "bento/ubuntu-20.04"
+      linuxagent.vm.provider :hyperv do |hv|
+        hv.linked_clone = true
+        hv.memory = 4096
+        hv.cpus = 2
+        hv.maxmemory = 4096
+      end
+
+      linuxagent.vm.provision :rke2, run: "once" do |rke2|
+        rke2.env = <<~ENV
+        INSTALL_RKE2_VERSION=#{rke2_version}
+        INSTALL_RKE2_TYPE=agent
+        ENV
+
+        rke2.config_mode = '0644' # side-step https://github.com/k3s-io/k3s/issues/4321
+        rke2.config = <<~YAML
+          write-kubeconfig-mode: 0644
+          server: https://server:9345
+          token: vagrant-rke2
+        YAML
+      end
+    end
+end
